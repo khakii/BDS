@@ -1,0 +1,151 @@
+---
+title: "Chapter 6. Controls"
+author: "Sejong Park"
+date: "5/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(magrittr)
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+```
+
+## Conditional Ignorability and Linear Treatment Effects
+
+OJ data
+
+```{r oj price-sales scatter}
+oj <- read.csv("oj.csv") 
+
+ggplot(oj) +
+  geom_point(aes(x = log(price), y = log(sales), color = brand))
+```
+
+A simple log-log regression yields an estimated `-1.6` elasticity.
+
+```{r basefit}
+basefit <- lm(log(sales) ~ log(price), data = oj)
+beta <- coef(basefit)
+beta
+```
+
+```{r basefit plot}
+ggplot(oj) +
+  geom_point(aes(x = log(price), y = log(sales), color = brand)) +
+  geom_abline(intercept = beta["(Intercept)"],
+              slope = beta["log(price)"])
+```
+
+When we control for brand effect, the elasticity estimate nearly doubles to
+`-3.14`.
+
+```{r brandfit}
+brandfit <- lm(log(sales) ~ brand + log(price), data = oj)
+beta <- coef(brandfit)
+beta
+```
+
+```{r brandfit plot}
+brandcol <- gg_color_hue(3)
+
+ggplot(oj) +
+  geom_point(aes(x = log(price), y = log(sales), color = brand)) +
+  geom_abline(intercept = beta["(Intercept)"],
+              slope = beta["log(price)"],
+              color = brandcol[1]) +
+  geom_abline(intercept = beta["(Intercept)"] + beta["brandminute.maid"],
+              slope = beta["log(price)"],
+              color = brandcol[2]) +
+  geom_abline(intercept = beta["(Intercept)"] + beta["brandtropicana"],
+              slope = beta["log(price)"],
+              color = brandcol[3])
+```
+
+Controlling for brand is equivalent to first regressing `log(price)` onto
+`brand` and then using the residuals as inputs to predict `log(sales)`.
+That is, OLS is finding the coefficients on the part of each input that is
+independent from the other inputs.
+
+```{r stagewise control}
+pricereg <- lm(log(price) ~ brand, data = oj)
+phat <- predict(pricereg, newdata = oj)
+presid <- log(oj$price) - phat
+coef(residfit <- lm(log(sales) ~ presid, data = oj))
+```
+
+## High-Dimensional Confounder Adjustment
+
+Donohue and Levitt 2001/2008: abortion and crime
+
+```{r abortion data, include=FALSE}
+## example reading non csv data: this is a dump from STATA
+## skip says skip the first line of the file, sep="/t" says 'tab separated'
+data <- read.table("abortion.dat", skip=1, sep="\t")
+names(data) <- c("state","year","pop","y_viol","y_prop","y_murd",
+	"a_murd","a_viol","a_prop",'prison','police',
+	'ur','inc','pov','afdc','gun','beer')
+
+## prison: log of lagged prisoners per capita
+## police: the log of lagged police per capita
+## ur: the unemployment rate
+## inc: per-capita income
+## pov: the poerty rate
+## AFDC: generosity at year t-15
+## gun: dummy for concealed weapons law
+## beer: beer consumption per capita 
+
+data <- data[!(data$state%in%c(2,9,12)),] # AK, DC, HA are strange places
+data <- data[data$year>84 & data$year<98,] # incomplete data outside these years
+data$pop <- log(data$pop)
+t <- data$year - 85
+s <- factor(data$state) ## the states are numbered alphabetically
+
+controls <- data.frame(data[,c(3,10:17)])
+## y is de-trended log crime rate, a is as described below
+## note we also have violent and property crime versions
+y <- data$y_murd
+d <- data$a_murd
+
+## The abortion 'a_' variables are weighted average of abortion rates where
+## weights are determined by the fraction of the type of crime committed by
+## various age groups. For example, if 60% of violent crime were committed by 18
+## year olds and 40% were committed by 19 year olds in state i, the abortion rate
+## for violent crime at time t in state i would be constructed as .6 times the
+## abortion rate in state i at time t − 18 plus .4 times the abortion rate in
+## state i at time t − 19. See Donohue and Levitt (2001) for further detail.
+```
+
+```{r abortion data table}
+head(data)
+```
+
+```{r abortion fit}
+orig <- glm(y ~ d + t + s + ., data = controls)
+summary(orig)$coef["d",]
+```
+
+```{r cellphone data, include=FALSE}
+## Now the same analysis, but for cellphones rather than abortion
+cell <- read.csv("../examples/us_cellphone.csv")
+# center on 1985 and scale by 1997-1985
+cellrate <- 5*cell[,2]/(1000*cell[,3]) 
+## what if we're just fitting a quadratic trend?
+## there are many things that increased with similar shapes over time
+## (cellphone usage, yoga revenues, home prices, ...)
+
+phone <- cellrate[t+1]
+
+par(mai=c(.9,.9,.1,.1))
+plot(1985:1997, tapply(d, t, mean), bty="n", xlab="year", ylab="rate", pch=21, bg=2)
+points(1985:1997, cellrate, bg=4, pch=21)
+legend("topleft", fill=c(2,4), legend=c("abortions","cellphones"), bty="n")
+```
+
+

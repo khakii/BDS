@@ -1,0 +1,17 @@
+---
+title: "BDS Typos"
+author: "Sejong Park"
+date: "5/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 6. Controls
+
+- Page 168, Line 13: linear time tred $t\delta_t$ -> $t\delta$. The regression
+coefficient $\delta$ does not depend on $t$.
+- Page 168, Line 17, Equation 6.3: $t\delta_t$ -> $t\delta$
+- Page 168, Line -3: $t\delta_t$ -> $t\delta$
